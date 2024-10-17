@@ -1,0 +1,810 @@
+import sqlite3
+from sqlite3 import Error
+import tkinter as tk
+from tkinter import ttk, messagebox
+from PIL import Image, ImageTk
+from tkcalendar import DateEntry
+import random
+from tkinter.ttk import Style
+
+# Database functions
+def create_connection():
+    conn = None
+    try:
+        conn = sqlite3.connect('train_booking.db')  # Use a file-based database
+    except Error as e:
+        print(f"Error creating connection: {e}")
+    return conn
+
+
+def create_tables(conn):
+    try:
+        cursor = conn.cursor()
+        cursor.execute('''CREATE TABLE IF NOT EXISTS Users (
+            id INTEGER PRIMARY KEY,
+            username TEXT NOT NULL UNIQUE,
+            password TEXT NOT NULL
+        )''')
+        
+        cursor.execute('''CREATE TABLE IF NOT EXISTS Trains (
+            id INTEGER PRIMARY KEY,
+            train_number TEXT,
+            name TEXT,
+            source TEXT,
+            destination TEXT,
+            seats INTEGER
+        )''')
+        
+        cursor.execute('''CREATE TABLE IF NOT EXISTS CoachTypes (
+            id INTEGER PRIMARY KEY,
+            name TEXT NOT NULL,
+            price REAL NOT NULL
+        )''')
+        
+        cursor.execute('''CREATE TABLE IF NOT EXISTS Bookings (
+            id INTEGER PRIMARY KEY,
+            train_id INTEGER,
+            coach_type TEXT,
+            passenger_name TEXT,
+            age INTEGER,
+            sex TEXT,
+            num_passengers INTEGER,
+            date TEXT,
+            total_price REAL,
+            FOREIGN KEY (train_id) REFERENCES Trains (id)
+        )''')
+        
+        # Insert sample coach types if the table is empty
+        cursor.execute("SELECT COUNT(*) FROM CoachTypes")
+        if cursor.fetchone()[0] == 0:
+            sample_coaches = [
+                ('Second Sitting', 50),
+                ('Sleeper', 100),
+                ('AC Chair Car', 150),
+                ('AC 3 Tier', 200),
+                ('AC 2 Tier', 250),
+                ('AC First Class', 300)
+            ]
+            cursor.executemany('''INSERT INTO CoachTypes (name, price)
+                                  VALUES (?, ?)''', sample_coaches)
+        
+        conn.commit()
+    except Error as e:
+        print(f"Error creating tables: {e}")
+
+
+def insert_user(conn, username, password):
+    try:
+        sql = '''INSERT INTO Users(username, password)
+                 VALUES(?, ?)'''
+        cur = conn.cursor()
+        cur.execute(sql, (username, password))
+        conn.commit()
+    except Error as e:
+        print(f"Error inserting user: {e}")
+
+def authenticate_user(conn, username, password):
+    try:
+        cur = conn.cursor()
+        cur.execute('''SELECT * FROM Users WHERE username = ? AND password = ?''', (username, password))
+        user = cur.fetchone()
+        return user is not None
+    except Error as e:
+        print(f"Error authenticating user: {e}")
+        return False
+
+def insert_train(conn, name, departure, arrival, date, price):
+    try:
+        sql = '''INSERT INTO Trains(name, departure, arrival, date, price)
+                 VALUES(?, ?, ?, ?, ?)'''
+        cur = conn.cursor()
+        cur.execute(sql, (name, departure, arrival, date, price))
+        conn.commit()
+        return cur.lastrowid
+    except Error as e:
+        print(f"Error inserting train: {e}")
+
+def insert_coach(conn, train_id, coach_type, price):
+    try:
+        sql = '''INSERT INTO Coaches(train_id, coach_type, price)
+                 VALUES(?, ?, ?)'''
+        cur = conn.cursor()
+        cur.execute(sql, (train_id, coach_type, price))
+        conn.commit()
+    except Error as e:
+        print(f"Error inserting coach: {e}")
+
+def insert_payment_method(conn, method):
+    try:
+        sql = '''INSERT INTO PaymentMethods(method)
+                 VALUES(?)'''
+        cur = conn.cursor()
+        cur.execute(sql, (method,))
+        conn.commit()
+        return cur.lastrowid
+    except Error as e:
+        print(f"Error inserting payment method: {e}")
+
+def insert_booking(conn, train_id, coach_id, passenger_name, age, sex, num_passengers, date, payment_method_id, payment_slip):
+    try:
+        sql = '''INSERT INTO Bookings(train_id, coach_id, passenger_name, age, sex, num_passengers, date, payment_method_id, payment_slip)
+                 VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?)'''
+        cur = conn.cursor()
+        cur.execute(sql, (train_id, coach_id, passenger_name, age, sex, num_passengers, date, payment_method_id, payment_slip))
+        conn.commit()
+    except Error as e:
+        print(f"Error inserting booking: {e}")
+
+def query_trains(conn, departure, arrival, date):
+    try:
+        cur = conn.cursor()
+        cur.execute('''SELECT id, name, departure, arrival, date, price
+        FROM Trains
+        WHERE departure = ? AND arrival = ? AND date = ?''', (departure, arrival , date))
+        rows = cur.fetchall()
+        return rows
+    except Error as e:
+        print(f"Error querying trains: {e}")
+        return []
+
+def query_coaches(conn, train_id):
+    try:
+        cur = conn.cursor()
+        cur.execute('''SELECT id, coach_type, price
+        FROM Coaches
+        WHERE train_id = ?''', (train_id,))
+        rows = cur.fetchall()
+        return rows
+    except Error as e:
+        print(f"Error querying coaches: {e}")
+        return []
+def query_payment_methods(conn):
+    try:
+        cur = conn.cursor()
+        cur.execute('''SELECT id, method
+        FROM PaymentMethods''')
+        rows = cur.fetchall()
+        return rows
+    except Error as e:
+        print(f"Error querying payment methods: {e}")
+        return []
+
+def query_bookings(conn, train_id):
+    try:
+        cur = conn.cursor()
+        cur.execute('''SELECT id, passenger_name, date
+        FROM Bookings
+        WHERE train_id = ?''', (train_id,))
+        rows = cur.fetchall()
+        return rows
+    except Error as e:
+        print(f"Error querying bookings: {e}")
+        return []
+
+
+def insert_sample_trains(conn):
+    try:
+        cursor = conn.cursor()
+        sample_trains = [
+            ('12951', 'Rajdhani Express', 'Delhi', 'Mumbai', 500),
+            ('12952', 'Shatabdi Express', 'Delhi', 'Mumbai', 400),
+            ('19011', 'Gujarat Express', 'Mumbai', 'Ahmedabad', 350),
+            ('12953', 'August Kranti', 'Delhi', 'Mumbai', 450),
+            ('12954', 'Tejas Express', 'Delhi', 'Mumbai', 300)
+        ]
+        
+        cursor.executemany('''INSERT OR IGNORE INTO Trains 
+                          (train_number, name, source, destination, seats)
+                          VALUES (?, ?, ?, ?, ?)''', sample_trains)
+        conn.commit()
+    except sqlite3.Error as e:
+        print(f"Error inserting sample data: {e}")
+
+
+        
+def set_background(root, image_path):
+    background_image = Image.open(image_path)
+    background_image = background_image.resize((root.winfo_screenwidth(), root.winfo_screenheight()), Image.LANCZOS)
+    background_photo = ImageTk.PhotoImage(background_image)
+    
+    background_label = tk.Label(root, image=background_photo)
+    background_label.image = background_photo  # Keep a reference to avoid garbage collection
+    background_label.place(relwidth=1, relheight=1, relx=0, rely=0)  # Place the background label at the bottom
+# Define custom styles for buttons
+def setup_styles():
+    style = ttk.Style()
+    
+    # Define a custom theme for login button
+    style.configure('Login.TButton',
+                    background='#FF0000',  # Green
+                    foreground='#32a8a2',
+                    font=('Helvetica', 12, 'bold'),
+                    padding=10)
+    style.map('Login.TButton',
+              background=[('active', '#00FF00')])  # Slightly darker green on hover
+
+    # Define a custom theme for register button
+    style.configure('Register.TButton',
+                    background='#FF0000',  # Blue
+                    foreground='#32a8a2',
+                    font=('Helvetica', 12, 'bold'),
+                    padding=10)
+    style.map(' Register .TButton',
+ background=[('active', '#0b7dda')])  # Slightly darker blue on hover
+
+
+
+# Database functions remain the same
+
+# Main application class
+class TrainBookingApp:
+    def __init__(self, root, conn):
+        self.conn = conn
+        self.root = root
+        self.selected_train_id = None  # Add this line to store the selected train ID
+        self.root.title("Train Booking App")
+        self.root.state('zoomed')
+        self.background_frame = tk.Frame(self.root)
+        self.background_frame.place(relwidth=1, relheight=1, relx=0, rely=0)
+        set_background(self.background_frame, r"C:\Users\Lenovo\Downloads\DALL·E 2024-10-16 17.02.11 - A sleek, modern train traveling through a scenic natural landscape. The train is futuristic in design with large windows, smooth metallic surfaces, an.png")
+        self.create_widgets()
+
+    def create_widgets(self):
+        main_frame = tk.Frame(self.root, bg="#4287f5")
+        main_frame.place(relx=0.5, rely=0.5, anchor='center', relwidth=0.8, relheight=0.8)
+
+        # Search functionality
+        search_frame = tk.Frame(main_frame, bg="#4287f5")
+        search_frame.pack(fill="both", expand=True, padx=20, pady=20)
+
+        tk.Label(search_frame, text="Search Trains", font=('Helvetica', 24, 'bold'), bg='#4287f5', fg='white').place(relx=0.5, rely=0.05, anchor='center')
+
+        search_fields_frame = tk.Frame(search_frame, bg="#4287f5")
+        search_fields_frame.place(relx=0.5, rely=0.2, anchor='center')
+
+        tk.Label(search_fields_frame, text="Departure:", bg='#4287f5', fg='white').grid(row=0, column=0, padx=10, pady=10, sticky='e')
+        self.search_departure_entry = tk.Entry(search_fields_frame, width=30)
+        self.search_departure_entry.grid(row=0, column=1, padx=10, pady=10)
+
+        tk.Label(search_fields_frame, text="Arrival:", bg='#4287f5', fg='white').grid(row=1, column=0, padx=10, pady=10, sticky='e')
+        self.search_arrival_entry = tk.Entry(search_fields_frame, width=30)
+        self.search_arrival_entry.grid(row=1, column=1, padx=10, pady=10)
+
+        tk.Label(search_fields_frame, text="Date:", bg='#4287f5', fg='white').grid(row=2, column=0, padx=10, pady=10, sticky='e')
+        self.search_date_entry = DateEntry(search_fields_frame, date_pattern='yyyy-mm-dd', width=28)
+        self.search_date_entry.grid(row=2, column=1, padx=10, pady=10)
+
+        buttons_frame = tk.Frame(search_frame, bg="#4287f5")
+        buttons_frame.place(relx=0.5, rely=0.45, anchor='center')
+
+        search_button = tk.Button(buttons_frame, text="Search Trains", command=self.search_trains, 
+                          bg='#03fcb1', fg='black', font=('Helvetica', 12, 'bold'),
+                          width=15, height=2)
+        search_button.grid(row=0, column=0, padx=10, pady=10)
+
+        book_button = tk.Button(buttons_frame, text="Book Now", command=self.book_train, 
+                                bg='#0356fc', fg='white', font=('Helvetica', 12, 'bold'),
+                                width=15, height=2)
+        book_button.grid(row=0, column=1, padx=10, pady=10)
+
+        train_list_frame = tk.Frame(search_frame, bg="#4287f5")
+        train_list_frame.place(relx=0.5, rely=0.65, anchor='center')
+
+        self.train_list = tk.Listbox(train_list_frame, width=80, bg='white', fg='#4287f5')
+        self.train_list.pack(fill="both", expand=True, padx=10, pady=10)
+        self.train_list.bind('<<ListboxSelect>>', self.on_train_select)
+
+        logout_frame = tk.Frame(search_frame, bg="#4287f5")
+        logout_frame.place(relx=0.95, rely=0.95, anchor='se')
+
+        logout_button = tk.Button(logout_frame, text=" Logout", command=self.logout, 
+                                  bg='#fc0307', fg='white', font=('Helvetica', 12, 'bold'),
+                                  width=10, height=1)
+        logout_button.pack(fill="both", expand=True, padx=10, pady=10)
+
+        
+    def logout(self):
+        for widget in self.root.winfo_children():
+            widget.destroy()
+        self.background_frame.destroy()
+        set_background(self.root, r"C:\Users\Lenovo\Downloads\DALL·E 2024-10-16 17.02.11 - A sleek, modern train traveling through a scenic natural landscape. The train is futuristic in design with large windows, smooth metallic surfaces, an.png")
+        login_page(self.root, self.conn)
+
+    def book_train(self):
+        for widget in self.root.winfo_children():
+            widget.destroy()
+        self.background_frame.destroy()
+        set_background(self.root, r"C:\Users\Lenovo\Downloads\DALL·E 2024-10-16 17.02.11 - A sleek, modern train traveling through a scenic natural landscape. The train is futuristic in design with large windows, smooth metallic surfaces, an.png")
+        self.book_train_screen()
+
+    def book_train_screen(self):
+        main_frame = tk.Frame(self.root, bg="#5622b5")
+        main_frame.place(relx=0.5, rely=0.5, anchor='center', relwidth=0.8, relheight=0.8)
+
+        booking_frame = tk.Frame(main_frame, bg="#5622b5", padx=20, pady=20)
+        booking_frame.pack(fill="both", expand=True)
+
+        tk.Label(booking_frame, text="Book Train", font=('Helvetica', 24, 'bold'), bg="#5622b5", fg="white").grid(row=0, column=0, columnspan=2, pady=20)
+
+        tk.Label(booking_frame, text="Train ID:", bg="#5622b5", fg="white").grid(row=1, column=0, sticky=tk.E, padx=10, pady=10)
+        self.train_id_entry = ttk.Entry(booking_frame, width=30, state='readonly')
+        self.train_id_entry.grid(row=1, column=1, padx=10, pady=10)
+        
+        if self.selected_train_id:
+            self.train_id_entry.configure(state='normal')
+            self.train_id_entry.delete(0, tk.END)
+            self.train_id_entry.insert(0, self.selected_train_id)
+            self.train_id_entry.configure(state='readonly')
+
+        tk.Label(booking_frame, text="Coach Type:", bg="#5622b5", fg="white").grid(row=2, column=0, sticky=tk.E, padx=10, pady=10)
+        self.coach_type_var = tk.StringVar()
+        self.coach_types = ["Select Coach Type"] + self.get_coach_types()
+        self.coach_type_combobox = ttk.Combobox(booking_frame, textvariable=self.coach_type_var, values=self.coach_types, state="readonly", width=28)
+        self.coach_type_combobox.current(0)  # Set default value to "Select Coach Type"
+        self.coach_type_combobox.grid(row=2, column=1, padx=10, pady=10)
+
+
+        tk.Label(booking_frame, text="Passenger Name:", bg="#5622b5", fg="white").grid(row=3, column=0, sticky=tk.E, padx=10, pady=10)
+        self.passenger_name_entry = ttk.Entry(booking_frame, width=30)
+        self.passenger_name_entry.grid(row=3, column=1, padx=10, pady=10)
+
+        tk.Label(booking_frame, text="Age:", bg="#5622b5", fg="white").grid(row=4, column=0, sticky=tk.E, padx=10, pady=10)
+        self.age_entry = ttk.Entry(booking_frame, width=30)
+        self.age_entry.grid(row=4, column=1, padx=10, pady=10)
+
+        tk.Label(booking_frame, text="Sex:", bg="#5622b5", fg="white").grid(row=5, column=0, sticky=tk.E, padx=10, pady=10)
+        self.sex_entry = ttk.Entry(booking_frame, width=30)
+        self.sex_entry.grid(row=5, column=1, padx=10, pady=10)
+
+        tk.Label(booking_frame, text="Number of Passengers:", bg="#5622b5", fg="white").grid(row=6, column=0, sticky=tk.E, padx=10, pady=10)
+        self.num_passengers_entry = ttk.Entry(booking_frame, width=30)
+        self.num_passengers_entry.grid(row=6, column=1, padx=10, pady=10)
+
+        tk.Label(booking_frame, text="Date:", bg="#5622b5", fg="white").grid(row=7, column=0, sticky=tk.E, padx=10, pady=10)
+        self.date_entry = DateEntry(booking_frame, date_pattern='yyyy-mm-dd', width=28)
+        self.date_entry.grid(row=7, column=1, padx=10, pady=10)
+
+        tk.Label(booking_frame, text="Payment Method:", bg="#5622b5", fg="white").grid(row=8, column=0, sticky=tk.E, padx=10, pady=10)
+        self.payment_method_entry = ttk.Entry(booking_frame, width=30)
+        self.payment_method_entry.grid(row=8, column=1, padx=10, pady=10)
+
+        tk.Label(booking_frame, text="Payment Slip:", bg="#5622b5", fg="white").grid(row=9, column=0, sticky=tk.E, padx=10, pady=10)
+        self.payment_slip_entry = ttk.Entry(booking_frame, width=30)
+        self.payment_slip_entry.grid(row=9, column=1, padx=10, pady=10)
+
+        book_button = tk.Button(booking_frame, text="Book Now", command=self.book_train_now, bg='#03fcb1', fg='black', font=('Helvetica', 12, 'bold'), width=15, height=2)
+        book_button.grid(row=10, column=0, columnspan=2, padx=10, pady=20)
+
+        back_button = tk.Button(booking_frame, text="Back", command=self.back_to_home, bg='#0356fc', fg='white', font=('Helvetica', 12, 'bold'), width=15, height=2)
+        back_button.grid(row=11, column=0, columnspan=2, padx=10, pady=10)
+
+        booking_frame.columnconfigure(0, weight=1)
+        booking_frame.columnconfigure(1, weight=1)
+
+   
+    def book_train_now(self):
+        train_id = self.train_id_entry.get()
+        coach_type = self.coach_type_var.get()
+        passenger_name = self.passenger_name_entry.get()
+        age = self.age_entry.get()
+        sex = self.sex_entry.get()
+        num_passengers = self.num_passengers_entry.get()
+        date = self.date_entry.get()
+        payment_method = self.payment_method_entry.get()
+        payment_slip = self.payment_slip_entry.get()
+
+        empty_fields = []
+        if not train_id:
+            empty_fields.append("Train ID")
+        if coach_type == "Select Coach Type":
+            empty_fields.append("Coach Type")
+        if not passenger_name:
+            empty_fields.append("Passenger Name")
+        if not age:
+            empty_fields.append("Age")
+        if not sex:
+            empty_fields.append("Sex")
+        if not num_passengers:
+            empty_fields.append("Number of Passengers")
+        if not date:
+            empty_fields.append("Date")
+        if not payment_method:
+            empty_fields.append("Payment Method")
+        if not payment_slip:
+            empty_fields.append("Payment Slip")
+
+        if empty_fields:
+            error_message = "Please fill in the following fields:\n- " + "\n- ".join(empty_fields)
+            messagebox.showerror("Incomplete Form", error_message)
+            return
+
+        try:
+            age = int(age)
+            if age <= 0 or age > 120:
+                messagebox.showerror("Invalid Age", "Please enter a valid age between 1 and 120.")
+                return
+        except ValueError:
+            messagebox.showerror("Invalid Age", "Please enter a valid numeric age.")
+            return
+
+        try:
+            num_passengers = int(num_passengers)
+            if num_passengers <= 0:
+                messagebox.showerror("Invalid Number of Passengers", "Please enter a valid number of passengers greater than 0.")
+                return
+        except ValueError:
+            messagebox.showerror("Invalid Number of Passengers", "Please enter a valid numeric value for number of passengers.")
+            return
+
+        if sex.lower() not in ['male', 'female', 'other']:
+            messagebox.showerror("Invalid Sex", "Please enter 'Male', 'Female', or 'Other' for sex.")
+            return
+
+        try:
+            cursor = self.conn.cursor()
+            cursor.execute('''SELECT price FROM CoachTypes WHERE name = ?''', (coach_type,))
+            coach_price = cursor.fetchone()[0]
+        except sqlite3.Error as e:
+            print(f"SQLite error: {e}")
+            messagebox.showerror("Error", "Failed to retrieve coach price.")
+            return
+
+        total_price = num_passengers * coach_price
+
+        self.process_booking(train_id, coach_type, passenger_name, age, sex, num_passengers, date, payment_method, payment_slip, total_price)
+
+
+    
+    def process_booking(self, train_id, coach_type, passenger_name, age, sex, num_passengers, date, payment_method, payment_slip):
+        # You need to get coach_id from the coach_type
+        coach_id = 1  # This should be retrieved from the database based on coach_type
+
+        # You need to get payment_method_id from the payment_method
+        payment_method_id = 1  # This should be retrieved from the database based on payment_method
+
+        # Calculate the total price (you may want to get the actual price from the database)
+        total_price = num_passengers * 1000
+
+        # Display payment selection window
+        payment_window = tk.Toplevel(self.root)
+        payment_window.title("Payment Selection")
+        payment_window.geometry("500x300")
+
+        selected_payment_method = tk.StringVar()
+
+        def on_payment_selected():
+            payment_method = selected_payment_method.get()
+            if payment_method == "CARD":
+                show_card_payment_frame()
+            elif payment_method == "UPI":
+                show_upi_payment_frame()
+
+        def show_card_payment_frame():
+            card_frame = tk.Frame(payment_window)
+            card_frame.place(relx=0.5, rely= 0.5, anchor=tk.CENTER)
+
+            ttk.Label(card_frame, text="Enter Card Details:").grid(row=0, column=0, padx=10, pady=10)
+            ttk.Label(card_frame, text="Card Number:").grid(row=1, column=0, padx=10, pady=10)
+            card_number_entry = ttk.Entry(card_frame, width=20)
+            card_number_entry.grid(row=1, column=1, padx=10, pady=10)
+            ttk.Label(card_frame, text="CVV:").grid(row=2, column=0, padx=10, pady=10)
+            cvv_entry = ttk.Entry(card_frame, width=5)
+            cvv_entry.grid(row=2, column=1, padx=10, pady=10)
+            ttk.Label(card_frame, text="Expiration Date:").grid(row=3, column=0, padx=10, pady=10)
+            exp_date_entry = DateEntry(card_frame, date_pattern='dd/mm/yyyy', width=10)
+            exp_date_entry.grid(row=3, column=1, padx=10, pady=10)
+            confirm_button = ttk.Button(card_frame, text="Confirm Booking", command=lambda: confirm_booking(card_number_entry, cvv_entry, exp_date_entry))
+            confirm_button.grid(row=4, column=0, columnspan=2, padx=10, pady=10)
+
+        def show_upi_payment_frame():
+            upi_frame = tk.Frame(payment_window)
+            upi_frame.place(relx=0.5, rely=0.5, anchor=tk.CENTER)
+
+            ttk.Label(upi_frame, text="Enter UPI Details:").grid(row=0, column=0, padx=10, pady=10)
+            upi_id_entry = ttk.Entry(upi_frame, width=20)
+            upi_id_entry.grid(row=1, column=0, padx=10, pady=10)
+            confirm_button = ttk.Button(upi_frame, text="Confirm Booking", command=lambda: confirm_booking(upi_id_entry))
+            confirm_button.grid(row=2, column=0, columnspan=2, padx=10, pady=10)
+
+        def confirm_booking(*args):
+            payment_window.destroy()
+            display_payment_window()
+
+        def display_payment_window():
+            # Display payment window with the selected payment method and total price
+            payment_window = tk.Toplevel(self.root)
+            payment_window.title("Payment")
+            payment_window.geometry("600x300")
+
+            ttk.Label(payment_window, text="Payment Method:", font=('Helvetica', 18)).grid(row=0, column=0, padx=10, pady=10)
+            ttk.Label(payment_window, text=selected_payment_method.get(), font=('Helvetica', 18)).grid(row=0, column=1, padx=1 , pady=10)
+
+            ttk.Label(payment_window, text ="Amount:", font=('Helvetica', 18)).grid(row=1, column=0, padx=10, pady=10)
+            ttk.Label(payment_window, text=f"₹ {total_price}", font=('Helvetica', 18)).grid(row=1, column=1, padx=1, pady=10)
+
+            ttk.Button(payment_window, text="Pay Now", command=lambda: self.payment_success(payment_window, total_price), style='TButton').grid(row=2, column=0, columnspan=2, padx=10, pady=10)
+
+        payment_method_frame = tk.Frame(payment_window)
+        payment_method_frame.place(relx=0.5, rely=0.5, anchor=tk.CENTER)
+
+        ttk.Label(payment_method_frame, text="Select Payment Method:").grid(row=0, column=0, padx=10, pady=10)
+        payment_method_option = ttk.OptionMenu(payment_method_frame, selected_payment_method, "CARD", "UPI")
+        payment_method_option.grid(row=1, column=0, padx=10, pady=10)
+        confirm_button = ttk.Button(payment_method_frame, text="Confirm", command=on_payment_selected, style='TButton')
+        confirm_button.grid(row=2, column=0, padx=10, pady=10)
+
+        payment_window.wait_visibility()
+        payment_window.grab_set()
+        payment_window.wait_window()
+
+    
+    def payment_success(self, payment_window, amount_label):
+        # Simulate payment success
+        payment_window.destroy()
+        messagebox.showinfo("Payment Success", "Payment successful! Your booking has been confirmed.")
+        payment_slip_window = tk.Toplevel(self.root)
+        payment_slip_window.title("Payment Slip")
+        payment_slip_window.geometry("400x200")
+
+        ttk.Label(payment_slip_window, text="Payment Slip:", font=('Helvetica', 12, 'bold')).grid(row=0, column=0, columnspan=2, padx=10, pady=10)
+
+        ttk.Label(payment_slip_window, text="Slip No:", font=('Helvetica', 12)).grid(row=1, column=0, padx=10, pady=10)
+        slip_no_label = ttk.Label(payment_slip_window, text=f"SLIP-{random.randint(1000, 9999)}", font=('Helvetica', 12))
+        slip_no_label.grid(row=1, column=1, padx=10, pady=10)
+
+        ttk.Label(payment_slip_window, text="QR Code:", font=('Helvetica', 12)).grid(row=2, column=0, padx=10, pady=10)
+        qr_code_label = ttk.Label(payment_slip_window, text="QR Code will be displayed here", font=('Helvetica', 12))
+        qr_code_label.grid(row=2, column=1, padx=10, pady=10)
+
+        ttk .Button(payment_slip_window, text="Close", command=payment_slip_window.destroy, style='TButton').grid(row=3, column=0, columnspan=2, padx=10, pady=10)
+
+    def back_to_home(self):
+        for widget in self.root.winfo_children():
+            widget.destroy()
+        self.background_frame.destroy()
+        set_background(self.root, r"C:\Users\Lenovo\Downloads\DALL·E 2024-10-16 17.02.11 - A sleek, modern train traveling through a scenic natural landscape. The train is futuristic in design with large windows, smooth metallic surfaces, an.png")
+        self.create_widgets()
+
+    def get_coach_types(self):
+        try:
+            cursor = self.conn.cursor()
+            cursor.execute('''SELECT name FROM CoachTypes''')
+            coach_types = [row[0] for row in cursor.fetchall()]
+            return coach_types
+        except sqlite3.Error as e:
+            print(f"SQLite error: {e}")
+            return []
+
+    def search_trains(self):
+        departure = self.search_departure_entry.get()
+        arrival = self.search_arrival_entry.get()
+        date = self.search_date_entry.get()
+
+        print(f"Searching for - Departure: {departure}, Arrival: {arrival}, Date: {date}")
+
+        try:
+            cursor = self.conn.cursor()
+            
+            # First, let's check what data actually exists in the database
+            cursor.execute("SELECT * FROM Trains")
+            all_trains = cursor.fetchall()
+            print("All trains in database:", all_trains)
+            
+            # Modified query with more flexible matching
+            query = """
+            SELECT train_number, name, source, destination, seats
+            FROM Trains
+            WHERE LOWER(source) LIKE LOWER(?) 
+            AND LOWER(destination) LIKE LOWER(?)
+            """
+            
+            # Simplify the search terms (remove 'New' from 'New Delhi' for more flexible matching)
+            departure_search = '%' + departure.replace('New ', '') + '%'
+            arrival_search = '%' + arrival + '%'
+            
+            params = (departure_search, arrival_search)
+            print(f"Executing query: {query}")
+            print(f"With parameters: {params}")
+            
+            cursor.execute(query, params)
+            
+            trains = cursor.fetchall()
+            
+            print(f"Found {len(trains)} trains")
+            for train in trains:
+                print(train)
+
+            self.train_list.delete(0, tk.END)
+            if trains:
+                for train in trains:
+                    train_info = f"{train[1]} ({train[0]}) - From: {train[2]} To: {train[3]} - Seats Available: {train[4]}"
+                    self.train_list.insert(tk.END, train_info)
+            else:
+                # Let's try an alternative search
+                alternative_query = """
+                SELECT train_number, name, source, destination, seats
+                FROM Trains
+                WHERE LOWER(source) LIKE LOWER(?) 
+                OR LOWER(destination) LIKE LOWER(?)
+                """
+                cursor.execute(alternative_query, ('%Delhi%', '%Mumbai%'))
+                alternative_trains = cursor.fetchall()
+                
+                if alternative_trains:
+                    self.train_list.insert(tk.END, "Showing related trains:")
+                    for train in alternative_trains:
+                        train_info = f"{train[1]} ({train[0]}) - From: {train[2]} To: {train[3]} - Seats Available: {train[4]}"
+                        self.train_list.insert(tk.END, train_info)
+                else:
+                    self.train_list.insert(tk.END, "No trains found for the given criteria.")
+                    messagebox.showinfo("No Trains", "No trains found for the given criteria. Please check the city names and try again.")
+
+        except sqlite3.Error as e:
+            print(f"SQLite error: {e}")
+            messagebox.showerror("Database Error", f"An error occurred: {str(e)}")
+
+            
+    def on_train_select(self, event):
+        if not self.train_list.curselection():
+            return
+        selected_train = self.train_list.get(self.train_list.curselection())
+        # Extract train ID from the selected string using string manipulation
+        # Format is "Rajdhani Express (12951) - From: Delhi To: Mumbai - Seats Available: 500"
+        try:
+            self.selected_train_id = selected_train.split('(')[1].split(')')[0]
+            print(f"Selected train ID: {self.selected_train_id}")
+        except IndexError:
+            self.selected_train_id = None
+            print("Could not extract train ID from selection")
+
+def login_page(root, conn):
+    frame = ttk.Frame(root, padding="10")
+    frame.place(relx=0.5, rely=0.5, anchor='center')
+
+    ttk.Label(frame, text="Login Page", font=('Helvetica', 24, 'bold'), background='lightblue').grid(row=0, column=0, columnspan=2, padx=5, pady=10)
+
+    ttk.Label(frame, text="Username:").grid(row=1, column=0, padx=5, pady=5)
+    username_entry = ttk.Entry(frame, width=20)
+    username_entry.grid(row=1, column=1, padx=5, pady=5)
+
+    ttk.Label(frame, text="Password:").grid(row=2, column=0, padx=5, pady=5)
+    password_entry = ttk.Entry(frame, show="*", width=20)
+    password_entry.grid(row=2, column=1, padx=5, pady=5)
+
+    ttk.Button(frame, text="Login", command=lambda: login(username_entry, password_entry, conn), style='Login.TButton').grid(row=3, column=0, padx=5, pady=10)
+
+    ttk.Button(frame, text="Register", command=lambda: register_page(root, conn), style='Register.TButton').grid(row=3, column=1, padx=5, pady=10)
+
+    ttk.Button(frame, text="Forget Password", command=lambda: forget_password(root, conn), style='Register.TButton').grid(row=4, column=0, columnspan=2, padx=5, pady=10)
+
+def forget_password(root, conn):
+    frame = ttk.Frame(root, padding="10")
+    frame.place(relx=0.5, rely=0.5, anchor='center')
+
+    ttk.Label(frame, text="Forget Password", font=('Helvetica', 24, 'bold'), background='lightblue').grid(row=0, column=0, columnspan=2, padx=5, pady=10)
+
+    ttk.Label(frame, text="Username:").grid(row=1, column=0, padx=5, pady=5)
+    username_entry = ttk.Entry(frame, width=20)
+    username_entry.grid(row=1, column=1, padx=5, pady=5)
+
+    ttk.Label(frame, text="What is your pet's name?").grid(row=2, column=0, padx=5, pady=5)
+    question1_entry = ttk.Entry(frame, width=20)
+    question1_entry.grid(row=2, column=1, padx=5, pady=5)
+
+    ttk.Label(frame, text="What is your favorite hobby?").grid(row=3, column=0, padx=5, pady=5)
+    question2_entry = ttk.Entry(frame, width=20)
+    question2_entry.grid(row=3, column=1, padx=5, pady=5)
+    ttk.Label(frame, text="What is your favorite food?").grid(row=4, column=0, padx=5, pady=5)
+    question3_entry = ttk.Entry(frame, width=20)
+    question3_entry.grid(row=4, column=1, padx=5, pady=5)
+
+    ttk.Button(frame, text="Submit", command=lambda: submit_forget_password(username_entry, question1_entry, question2_entry, question3_entry, conn), style='Login.TButton').grid(row=5 , column=0, columnspan=2, padx=5, pady=10)
+
+def submit_forget_password(username_entry, question1_entry, question2_entry, question3_entry, conn):
+    username = username_entry.get()
+    question1 = question1_entry.get()
+    question2 = question2_entry.get()
+    question3 = question3_entry.get()
+
+    # In a real application, you would check these answers against stored values
+    # For this example, we'll assume the answers are correct
+
+    login_frame = username_entry.master
+    for widget in login_frame.winfo_children():
+        widget.destroy()
+
+    new_password_frame = ttk.Frame(login_frame)
+    new_password_frame.pack(fill="both", expand=True)
+
+    ttk.Label(new_password_frame, text="Choose a new password", font=('Helvetica', 24, 'bold'), background='lightblue').grid(row=0, column=0, columnspan=2, padx=5, pady=(20, 10))
+
+    ttk.Label(new_password_frame, text="New Password:").grid(row=1, column=0, padx=5, pady=5)
+    new_password_entry = ttk.Entry(new_password_frame, show="*", width=20)
+    new_password_entry.grid(row=1, column=1, padx=5, pady=5)
+
+    ttk.Label(new_password_frame, text="Confirm Password:").grid(row=2, column=0, padx=5, pady=5)
+    confirm_password_entry = ttk.Entry(new_password_frame, show="*", width=20)
+    confirm_password_entry.grid(row=2, column=1, padx=5, pady=5)
+
+    def update_password():
+        new_password = new_password_entry.get()
+        confirm_password = confirm_password_entry.get()
+        if new_password == confirm_password:
+            try:
+                cur = conn.cursor()
+                cur.execute('''UPDATE Users SET password = ? WHERE username = ?''', (new_password, username))
+                conn.commit()
+                messagebox.showinfo("Success", "Password updated successfully.")
+                new_password_frame.destroy()
+                login_page(login_frame.master, conn)
+            except Error as e:
+                messagebox.showerror("Error", str(e))
+        else:
+            messagebox.showerror("Error", "Passwords do not match.")
+
+    ttk.Button(new_password_frame, text="Confirm", command=update_password, style='Login.TButton').grid(row=3, column=0, columnspan=2, padx=5, pady=10)
+
+def login(username_entry, password_entry, conn):
+    username = username_entry.get()
+    password = password_entry.get()
+    if authenticate_user(conn, username, password):
+        login_page_frame = username_entry.master
+        login_page_frame.destroy()
+        TrainBookingApp(username_entry.master.master, conn)
+    else:
+        messagebox.showerror("Error", "Invalid username or password")
+
+def register_page(root, conn):
+    frame = ttk.Frame(root, padding="10")
+    frame.place(relx=0.5, rely=0.5, anchor='center')
+
+    ttk.Label(frame, text="Register Page", font=('Helvetica', 24, 'bold'), background='lightblue').grid(row=0, column=0, columnspan=2, padx=5, pady=10)
+
+    ttk.Label(frame, text="Username:").grid(row=1, column=0, padx=5, pady=5)
+    username_entry = ttk.Entry(frame, width=20)
+    username_entry.grid(row=1, column=1, padx=5, pady=5)
+
+    ttk.Label(frame, text="Password:").grid(row=2, column=0, padx=5, pady=5)
+    password_entry = ttk.Entry(frame, show="*", width=20)
+    password_entry.grid(row=2, column=1, padx=5, pady=5)
+
+    ttk.Button(frame, text="Register", command=lambda: register(username_entry, password_entry, conn), style='Login.TButton').grid(row=3, column=0, columnspan=2, padx=5, pady=10)
+
+    ttk.Button(frame, text="Back", command=lambda: back_to_login(root, conn), style='Register.TButton').grid(row=4, column=0, columnspan=2, padx=5, pady=10)
+
+def register(username_entry, password_entry, conn):
+    username = username_entry.get()
+    password = password_entry.get()
+    if username and password:
+        if not authenticate_user(conn, username, password):
+            insert_user(conn, username, password)
+            messagebox.showinfo("Success", "Registration successful. You can now log in.")
+            back_to_login(username_entry.master.master, conn)
+        else:
+            messagebox.showerror("Error", "Username already exists.")
+    else:
+        messagebox.showerror("Error", "Please fill in all fields.")
+
+def back_to_login(root, conn):
+    for widget in root.winfo_children():
+        widget.destroy()
+    login_page(root, conn )
+
+def main():
+    conn = create_connection()
+    if conn:
+        create_tables(conn)
+        insert_sample_trains(conn)
+
+        root = tk.Tk()
+        screen_width = root.winfo_screenwidth()
+        screen_height = root.winfo_screenheight()
+        root.geometry(f"{screen_width}x{screen_height}+0+0")
+        root.state('zoomed')
+        setup_styles()
+        set_background(root, r"C:\Users\Lenovo\Downloads\DALL·E 2024-10-16 17.02.11 - A sleek, modern train traveling through a scenic natural landscape. The train is futuristic in design with large windows, smooth metallic surfaces, an.png")
+        login_page(root, conn)
+        root.mainloop()
+
+if __name__ == '__main__':
+    main()
